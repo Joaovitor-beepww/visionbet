@@ -29,5 +29,5 @@ const telegram = new TelegramService(botToken, chatId);
 const analyzer = new MatchAnalyzer();
 const scanner = new EspnScanner(analyzer, telegram);
 
-// Inicia a varredura contínua a cada 60 segundos
-scanner.start(60);
+// Inicia a varredura ultra-rápida a cada 30 segundos
+scanner.start(30);

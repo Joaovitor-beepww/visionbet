@@ -1,175 +1,10 @@
 export class MatchAnalyzer {
   constructor() {
-    // Armazena sinais já disparados para evitar duplicidade (fixtureId_strategy)
+    // Armazena sinais já disparados para evitar duplicidade (chave única por estratégia)
     this.sentAlerts = new Set();
   }
 
-  // Extrai estatísticas chave da resposta da API-Football
-  parseStats(statisticsResponse, elapsed) {
-    if (!statisticsResponse || statisticsResponse.length < 2) {
-      return null;
-    }
-
-    const homeStats = statisticsResponse[0]?.statistics || [];
-    const awayStats = statisticsResponse[1]?.statistics || [];
-
-    const getStat = (stats, type) => {
-      const item = stats.find(s => s.type.toLowerCase() === type.toLowerCase());
-      if (!item || item.value === null || item.value === undefined) return 0;
-      if (typeof item.value === 'string') {
-        const parsed = parseInt(item.value.replace('%', ''), 10);
-        return isNaN(parsed) ? 0 : parsed;
-      }
-      return item.value;
-    };
-
-    const shotsOnTargetHome = getStat(homeStats, 'Shots on Goal');
-    const shotsOnTargetAway = getStat(awayStats, 'Shots on Goal');
-    const totalShotsHome = getStat(homeStats, 'Total Shots');
-    const totalShotsAway = getStat(awayStats, 'Total Shots');
-    const cornersHome = getStat(homeStats, 'Corner Kicks');
-    const cornersAway = getStat(awayStats, 'Corner Kicks');
-    const possessionHome = getStat(homeStats, 'Ball Possession');
-    const possessionAway = getStat(awayStats, 'Ball Possession');
-
-    const totalShots = totalShotsHome + totalShotsAway;
-    const totalShotsOnTarget = shotsOnTargetHome + shotsOnTargetAway;
-    const totalCorners = cornersHome + cornersAway;
-
-    // Se nenhum dado estatístico foi registrado (scout zerado), descarta
-    if (totalShots === 0 && totalCorners === 0) {
-      return null;
-    }
-
-    // Calcula taxa de intensidade / APM estimado
-    const effectiveMinutes = Math.max(elapsed || 1, 1);
-    const apm = (totalShots * 1.5 + totalCorners * 1.0) / effectiveMinutes;
-
-    return {
-      shotsOnTargetHome,
-      shotsOnTargetAway,
-      totalShotsHome,
-      totalShotsAway,
-      cornersHome,
-      cornersAway,
-      possessionHome,
-      possessionAway,
-      totalShots,
-      totalShotsOnTarget,
-      totalCorners,
-      apm
-    };
-  }
-
-  // Avalia a partida com base nas regras anti-erro e gera o sinal se houver valor real
-  analyze(fixture, statsData) {
-    const fixtureId = fixture.fixture.id;
-    const elapsed = fixture.fixture.status.elapsed;
-    const homeGoals = fixture.goals.home ?? 0;
-    const awayGoals = fixture.goals.away ?? 0;
-    const totalGoals = homeGoals + awayGoals;
-
-    const stats = this.parseStats(statsData, elapsed);
-    if (!stats) return null; // Sem dados suficientes para operar com segurança
-
-    const signals = [];
-
-    // ==========================================
-    // ESTRATÉGIA 1: OVER 0.5 GOLS HT (1º Tempo)
-    // ==========================================
-    const keyHT = `${fixtureId}_OVER_HT`;
-    if (!this.sentAlerts.has(keyHT)) {
-      if (
-        elapsed >= 25 &&
-        elapsed <= 38 &&
-        totalGoals === 0 &&
-        stats.totalShotsOnTarget >= 3 &&
-        stats.totalShots >= 6 &&
-        stats.totalCorners >= 2
-      ) {
-        this.sentAlerts.add(keyHT);
-        signals.push({
-          title: 'Gols 1º Tempo',
-          strategy: 'OVER_05_HT',
-          recommendation: 'Over 0.5 Gols no 1º Tempo (HT)',
-          minOdds: 1.55,
-          reason: `🔥 Jogo em 0x0 com pressão no 1º tempo! ${stats.totalShotsOnTarget} chutes no gol e ${stats.totalShots} finalizações em ${elapsed} minutos.`,
-          match: { home: fixture.teams.home.name, away: fixture.teams.away.name },
-          league: fixture.league.name,
-          country: fixture.league.country,
-          elapsed,
-          score: { home: homeGoals, away: awayGoals },
-          stats
-        });
-      }
-    }
-
-    // ==========================================
-    // ESTRATÉGIA 2: OVER GOLS FT (Gol Limite 2º Tempo)
-    // ==========================================
-    const keyFT = `${fixtureId}_OVER_FT`;
-    if (!this.sentAlerts.has(keyFT)) {
-      const isCloseGame = Math.abs(homeGoals - awayGoals) <= 1; // empate ou diferença de 1 gol
-      if (
-        elapsed >= 70 &&
-        elapsed <= 83 &&
-        isCloseGame &&
-        stats.totalShotsOnTarget >= 6 &&
-        stats.totalShots >= 13 &&
-        stats.totalCorners >= 4
-      ) {
-        const nextGoalLine = totalGoals + 0.5;
-        this.sentAlerts.add(keyFT);
-        signals.push({
-          title: 'Gol Limite Final de Jogo',
-          strategy: 'OVER_GOLS_FT',
-          recommendation: `Over ${nextGoalLine} Gols Asiático / Limite`,
-          minOdds: 1.65,
-          reason: `⚡ Ritmo ofensivo intenso aos ${elapsed}'! Somatório de ${stats.totalShots} chutes (${stats.totalShotsOnTarget} no alvo) e jogo aberto para qualquer um marcar.`,
-          match: { home: fixture.teams.home.name, away: fixture.teams.away.name },
-          league: fixture.league.name,
-          country: fixture.league.country,
-          elapsed,
-          score: { home: homeGoals, away: awayGoals },
-          stats
-        });
-      }
-    }
-
-    // ==========================================
-    // ESTRATÉGIA 3: ESCANTEIOS LIMITE FT
-    // ==========================================
-    const keyCorners = `${fixtureId}_CORNERS_FT`;
-    if (!this.sentAlerts.has(keyCorners)) {
-      const isDesperate = Math.abs(homeGoals - awayGoals) <= 1; // time precisando do gol
-      if (
-        elapsed >= 82 &&
-        elapsed <= 88 &&
-        isDesperate &&
-        stats.totalCorners >= 7 &&
-        stats.totalShots >= 14
-      ) {
-        this.sentAlerts.add(keyCorners);
-        signals.push({
-          title: 'Cantos Limite FT',
-          strategy: 'CORNERS_FT',
-          recommendation: `Mais de 0.5 Cantos Limite (Linha Atual + 1)`,
-          minOdds: 1.60,
-          reason: `🚩 Abafa final aos ${elapsed}'! Jogo disputado com ${stats.totalCorners} escanteios já cobrados e time pressionando a área adversária.`,
-          match: { home: fixture.teams.home.name, away: fixture.teams.away.name },
-          league: fixture.league.name,
-          country: fixture.league.country,
-          elapsed,
-          score: { home: homeGoals, away: awayGoals },
-          stats
-        });
-      }
-    }
-
-    return signals;
-  }
-
-  // Analisador exclusivo para os dados ilimitados da ESPN
+  // Analisador para os dados da ESPN Global (Ilimitado)
   analyzeEspn(match, details) {
     const { id, elapsed, homeScore, awayScore, homeTeam, awayTeam, period } = match;
     const { leagueName, homeStats, awayStats } = details;
@@ -235,7 +70,95 @@ export class MatchAnalyzer {
     }
 
     // ==========================================
-    // ESTRATÉGIA 2: OVER GOLS FT (Gol Limite 2º Tempo)
+    // ESTRATÉGIA 2: CANTOS LIMITE HT (1º Tempo)
+    // ==========================================
+    const keyCornersHT = `espn_${id}_CORNERS_HT`;
+    if (!this.sentAlerts.has(keyCornersHT)) {
+      if (
+        period === 1 &&
+        elapsed >= 37 &&
+        elapsed <= 43 &&
+        totalCorners >= 4 &&
+        totalShots >= 6
+      ) {
+        this.sentAlerts.add(keyCornersHT);
+        signals.push({
+          title: 'Cantos Limite 1º Tempo',
+          strategy: 'CORNERS_HT',
+          recommendation: `Mais de 0.5 Cantos Limite HT (Linha Atual + 1)`,
+          minOdds: 1.60,
+          reason: `🚩 Ritmo de escanteios aquecido no fim do 1º tempo! ${totalCorners} cantos e ${totalShots} finalizações até os ${elapsed}' minutos.`,
+          match: { home: homeTeam, away: awayTeam },
+          league: leagueName,
+          country: 'Mundial',
+          elapsed,
+          score: { home: homeScore, away: awayScore },
+          stats
+        });
+      }
+    }
+
+    // ==========================================
+    // ESTRATÉGIA 3: AMBAS AS EQUIPES MARCAM (BTTS)
+    // ==========================================
+    const keyBTTS = `espn_${id}_BTTS`;
+    if (!this.sentAlerts.has(keyBTTS)) {
+      const isUnderTwoGoals = totalGoals <= 1;
+      const bothThreatening =
+        homeStats.shotsOnTarget >= 2 &&
+        awayStats.shotsOnTarget >= 2 &&
+        homeStats.totalShots >= 4 &&
+        awayStats.totalShots >= 4;
+
+      if (elapsed >= 30 && elapsed <= 65 && isUnderTwoGoals && bothThreatening) {
+        this.sentAlerts.add(keyBTTS);
+        signals.push({
+          title: 'Ambas Marcam (BTTS)',
+          strategy: 'BTTS_YES',
+          recommendation: 'Ambas as Equipes Marcam: SIM',
+          minOdds: 1.70,
+          reason: `⚔️ Jogo aberto lá e cá! Ambos os times agredindo a área: ${homeTeam} (${homeStats.shotsOnTarget} no alvo) x ${awayTeam} (${awayStats.shotsOnTarget} no alvo).`,
+          match: { home: homeTeam, away: awayTeam },
+          league: leagueName,
+          country: 'Mundial',
+          elapsed,
+          score: { home: homeScore, away: awayScore },
+          stats
+        });
+      }
+    }
+
+    // ==========================================
+    // ESTRATÉGIA 4: PRESSÃO DE FAVORITO ATRÁS DO PLACAR
+    // ==========================================
+    const keyComeback = `espn_${id}_COMEBACK`;
+    if (!this.sentAlerts.has(keyComeback)) {
+      if (period === 2 && elapsed >= 55 && elapsed <= 78) {
+        const homeLosing = homeScore === awayScore - 1 && homeStats.possession >= 58 && homeStats.shotsOnTarget >= 3;
+        const awayLosing = awayScore === homeScore - 1 && awayStats.possession >= 58 && awayStats.shotsOnTarget >= 3;
+
+        if (homeLosing || awayLosing) {
+          const pressingTeam = homeLosing ? homeTeam : awayTeam;
+          this.sentAlerts.add(keyComeback);
+          signals.push({
+            title: 'Pressão Máxima de Recuperação',
+            strategy: 'FAVORITE_PRESSING',
+            recommendation: `Over 0.5 Gols de ${pressingTeam} (ou Empate Anula/Dupla Chance)`,
+            minOdds: 1.65,
+            reason: `🦁 Abafa total! ${pressingTeam} está atrás por apenas 1 gol, com domínio absoluto de posse e volume ofensivo constante aos ${elapsed}' minutos.`,
+            match: { home: homeTeam, away: awayTeam },
+            league: leagueName,
+            country: 'Mundial',
+            elapsed,
+            score: { home: homeScore, away: awayScore },
+            stats
+          });
+        }
+      }
+    }
+
+    // ==========================================
+    // ESTRATÉGIA 5: OVER GOLS FT (Gol Limite 2º Tempo)
     // ==========================================
     const keyFT = `espn_${id}_OVER_FT`;
     if (!this.sentAlerts.has(keyFT)) {
@@ -268,10 +191,10 @@ export class MatchAnalyzer {
     }
 
     // ==========================================
-    // ESTRATÉGIA 3: ESCANTEIOS LIMITE FT
+    // ESTRATÉGIA 6: ESCANTEIOS LIMITE FT (Final de Jogo)
     // ==========================================
-    const keyCorners = `espn_${id}_CORNERS_FT`;
-    if (!this.sentAlerts.has(keyCorners)) {
+    const keyCornersFT = `espn_${id}_CORNERS_FT`;
+    if (!this.sentAlerts.has(keyCornersFT)) {
       const isDesperate = Math.abs(homeScore - awayScore) <= 1;
       if (
         period === 2 &&
@@ -281,7 +204,7 @@ export class MatchAnalyzer {
         totalCorners >= 7 &&
         totalShots >= 14
       ) {
-        this.sentAlerts.add(keyCorners);
+        this.sentAlerts.add(keyCornersFT);
         signals.push({
           title: 'Cantos Limite FT',
           strategy: 'CORNERS_FT',
@@ -301,4 +224,3 @@ export class MatchAnalyzer {
     return signals;
   }
 }
-
