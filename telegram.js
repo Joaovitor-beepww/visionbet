@@ -82,7 +82,47 @@ ${reason}
 ━━━━━━━━━━━━━━━━━━━━━━━
     `.trim();
 
-    return this.sendMessage(message);
+    const res = await this.sendMessage(message);
+    // Retorna o ID da mensagem para responder quando bater GREEN
+    return res?.result?.message_id;
+  }
+
+  async sendGreenAlert(bet, currentInfo) {
+    const { elapsed, homeScore, awayScore } = currentInfo;
+
+    const message = `
+✅✅✅ <b>GREEN CONFIRMADO!</b> 🟢🟢🟢
+━━━━━━━━━━━━━━━━━━━━━━━
+⚔️ <b>${bet.matchName}</b>
+🎯 <b>Entrada:</b> <b>${bet.recommendation}</b>
+⚽ <b>Placar no Momento:</b> ${homeScore} x ${awayScore}
+⏱️ <b>Tempo:</b> ${elapsed}' minutos
+
+💰 <i>Mais uma meta batida com sucesso pela análise quantitativa VisionBET! Respeitem a gestão de banca!</i>
+━━━━━━━━━━━━━━━━━━━━━━━
+    `.trim();
+
+    return this.sendMessage(message, {
+      reply_to_message_id: bet.messageId
+    });
+  }
+
+  async sendRedAlert(bet, currentInfo) {
+    const { homeScore, awayScore } = currentInfo;
+
+    const message = `
+❌ <b>RESULTADO: RED</b> 🔴
+━━━━━━━━━━━━━━━━━━━━━━━
+⚔️ <b>${bet.matchName}</b>
+🎯 <b>Entrada:</b> ${bet.recommendation}
+⚽ <b>Placar Final:</b> ${homeScore} x ${awayScore}
+
+⚠️ <i>A variância faz parte do longo prazo. Mantenham o método e a gestão de banca rigorosa!</i>
+━━━━━━━━━━━━━━━━━━━━━━━
+    `.trim();
+
+    return this.sendMessage(message, {
+      reply_to_message_id: bet.messageId
+    });
   }
 }
-
