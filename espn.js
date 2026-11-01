@@ -3,9 +3,6 @@ export class EspnProvider {
     this.baseUrl = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
   }
 
-  /**
-   * Busca todas as partidas de futebol que estão ao vivo agora (em andamento)
-   */
   async getLiveMatches() {
     try {
       const res = await fetch(`${this.baseUrl}/scorepanel`, {
@@ -17,8 +14,6 @@ export class EspnProvider {
       }
       const data = await res.json();
       const allEvents = (data.scores || []).flatMap(s => s.events || []);
-
-      // Filtra apenas jogos que estão com a bola rolando ("in")
       const liveEvents = allEvents.filter(e => e.status?.type?.state === 'in');
       return liveEvents.map(e => this.formatEventSummary(e));
     } catch (err) {
@@ -32,10 +27,9 @@ export class EspnProvider {
     const home = comp?.competitors?.find(c => c.homeAway === 'home');
     const away = comp?.competitors?.find(c => c.homeAway === 'away');
 
-    // Extrai o minuto atual (ex: "32'" -> 32)
     const displayClock = event.status?.displayClock || '0';
     const elapsed = parseInt(displayClock.replace(/[^0-9]/g, ''), 10) || 0;
-    const period = event.status?.period || 1; // 1 = 1º tempo, 2 = 2º tempo
+    const period = event.status?.period || 1;
 
     return {
       id: event.id,
@@ -52,9 +46,6 @@ export class EspnProvider {
     };
   }
 
-  /**
-   * Busca os dados estatísticos profundos (chutes, escanteios, posse) do jogo
-   */
   async getMatchStats(leagueId, eventId) {
     try {
       const lid = leagueId || 'all';
@@ -91,12 +82,20 @@ export class EspnProvider {
       const homeStats = extractStats(teams[0]);
       const awayStats = extractStats(teams[1]);
 
+      const competitors = data.header?.competitions?.[0]?.competitors || [];
+      const homeComp = competitors.find(c => c.homeAway === 'home');
+      const awayComp = competitors.find(c => c.homeAway === 'away');
+      const homeScore = parseInt(homeComp?.score || '0', 10);
+      const awayScore = parseInt(awayComp?.score || '0', 10);
+
       const leagueName = data.header?.league?.name || 'Liga Principal';
 
       return {
         leagueName,
         homeTeam: teams[0].team?.displayName || 'Casa',
         awayTeam: teams[1].team?.displayName || 'Fora',
+        homeScore,
+        awayScore,
         homeStats,
         awayStats,
         odds: data.odds || []
@@ -107,4 +106,3 @@ export class EspnProvider {
     }
   }
 }
-

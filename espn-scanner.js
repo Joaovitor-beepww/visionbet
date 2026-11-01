@@ -1,12 +1,13 @@
 import { EspnProvider } from './espn.js';
+import { ResultTracker } from './tracker.js';
 
 export class EspnScanner {
   constructor(analyzer, telegram) {
     this.espn = new EspnProvider();
     this.analyzer = analyzer;
     this.telegram = telegram;
+    this.tracker = new ResultTracker(this.telegram, this.espn);
     this.isRunning = false;
-    this.lastCheck = new Map();
   }
 
   sleep(ms) {
@@ -17,7 +18,7 @@ export class EspnScanner {
     const elapsed = match.elapsed;
     if (!elapsed) return false;
 
-    // Candidato se o jogo já passou dos 25 minutos de jogo (janela onde começam as análises quantitativas)
+    // Candidato se o jogo já passou dos 25 minutos de jogo
     return elapsed >= 25 && elapsed <= 89;
   }
 
@@ -25,6 +26,9 @@ export class EspnScanner {
     console.log(`\n[${new Date().toLocaleTimeString()}] 🌐 [ESPN ILIMITADO] Varrendo jogos ao vivo no mundo todo...`);
     const liveMatches = await this.espn.getLiveMatches();
     console.log(`[Status Ao Vivo] ${liveMatches.length} partidas rolando agora com cobertura de scout.`);
+
+    // 1. Confere se alguma aposta aberta bateu GREEN ou encerrou em RED
+    await this.tracker.checkAllBets();
 
     if (liveMatches.length === 0) {
       console.log(`ℹ️ [Aguardando Rodada] Nenhuma partida rolando no momento.`);
@@ -53,7 +57,10 @@ export class EspnScanner {
       if (signals && signals.length > 0) {
         for (const sig of signals) {
           console.log(`🔥 SINAL ENCONTRADO: ${sig.recommendation} em ${homeTeam} x ${awayTeam}!`);
-          await this.telegram.sendSignalAlert(sig);
+          const messageId = await this.telegram.sendSignalAlert(sig);
+          if (messageId) {
+            this.tracker.addBet(sig, messageId, match);
+          }
         }
       } else {
         console.log(`ℹ️ [Sem gatilho] Pressão ainda insuficiente para entrada.`);
@@ -65,7 +72,7 @@ export class EspnScanner {
 
   async start(intervalSeconds = 30) {
     this.isRunning = true;
-    console.log(`🚀 Motor VisionBET [MODO ILIMITADO - MULTI-ESTRATÉGIA] ATIVO!`);
+    console.log(`🚀 Motor VisionBET [MODO ILIMITADO COM DETECTOR DE GREEN/RED] ATIVO!`);
     console.log(`⏱️ Ciclo ultra-rápido: a cada ${intervalSeconds} segundos.`);
 
     while (this.isRunning) {
