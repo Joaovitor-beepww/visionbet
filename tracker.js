@@ -51,7 +51,6 @@ export class ResultTracker {
       resolved: false
     };
 
-    // Evita duplicatas
     if (!this.bets.some(b => b.id === bet.id)) {
       this.bets.push(bet);
       this.saveBets();
@@ -65,34 +64,37 @@ export class ResultTracker {
     console.log(`🔍 [Tracker] Conferindo resultado de ${this.bets.length} aposta(s) em aberto...`);
 
     const remainingBets = [];
+    const liveMatches = await this.espn.getLiveMatches();
 
     for (const bet of this.bets) {
       try {
+        const currentMatch = liveMatches.find(m => m.id === bet.matchId);
         const details = await this.espn.getMatchStats(bet.leagueId, bet.matchId);
-        if (!details) {
-          remainingBets.push(bet);
-          continue;
+
+        // Captura o placar mais atualizado possível (de details ou de liveMatches)
+        let homeScore = bet.initialHomeScore;
+        let awayScore = bet.initialAwayScore;
+
+        if (details && typeof details.homeScore === 'number' && !isNaN(details.homeScore)) {
+          homeScore = details.homeScore;
+          awayScore = details.awayScore;
+        } else if (currentMatch) {
+          homeScore = currentMatch.homeScore;
+          awayScore = currentMatch.awayScore;
         }
 
-        const totalShots = details.homeStats.totalShots + details.awayStats.totalShots;
-        const totalCorners = details.homeStats.corners + details.awayStats.corners;
-        const homeScore = details.homeScore ?? bet.initialHomeScore;
-        const awayScore = details.awayScore ?? bet.initialAwayScore;
         const currentTotalGoals = homeScore + awayScore;
-
-        // Pega estado atual do jogo na lista ao vivo
-        const liveMatches = await this.espn.getLiveMatches();
-        const currentMatch = liveMatches.find(m => m.id === bet.matchId);
+        const totalCorners = (details?.homeStats?.corners || 0) + (details?.awayStats?.corners || 0);
 
         const period = currentMatch?.period ?? 2;
         const elapsed = currentMatch?.elapsed ?? 90;
-        const isFinished = !currentMatch; // Se não está mais ao vivo, o jogo acabou
+        const isFinished = !currentMatch; // Se saiu da lista de ao vivo, jogo finalizou
 
         let isGreen = false;
         let isRed = false;
 
         // ==========================================
-        // 1. OVER 0.5 GOLS HT
+        // 1. OVER 0.5 GOLS HT (1º Tempo)
         // ==========================================
         if (bet.strategy === 'OVER_05_HT') {
           if (currentTotalGoals > bet.initialTotalGoals) {
@@ -125,9 +127,10 @@ export class ResultTracker {
         }
 
         // ==========================================
-        // 4. FAVORITO PRESSIONANDO
+        // 4. FAVORITO PRESSIONANDO (Over Gols / Empate)
         // ==========================================
         else if (bet.strategy === 'FAVORITE_PRESSING') {
+          // Bate se saiu qualquer gol a mais ou o time empatou/virou
           if (currentTotalGoals > bet.initialTotalGoals) {
             isGreen = true;
           } else if (isFinished) {
@@ -172,7 +175,7 @@ export class ResultTracker {
             awayScore
           });
         } else {
-          // Aposta ainda em andamento
+          // Aposta continua em andamento
           remainingBets.push(bet);
         }
       } catch (err) {
@@ -185,4 +188,3 @@ export class ResultTracker {
     this.saveBets();
   }
 }
-
