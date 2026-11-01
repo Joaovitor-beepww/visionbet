@@ -1,4 +1,4 @@
-import { EspnProvider } from './providers/espn.js';
+import { EspnProvider } from './espn.js';
 
 export class EspnScanner {
   constructor(analyzer, telegram) {

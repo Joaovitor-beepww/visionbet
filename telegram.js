@@ -3,8 +3,8 @@ dotenv.config();
 
 export class TelegramService {
   constructor(token, chatId) {
-    this.token = token || process.env.TELEGRAM_BOT_TOKEN;
-    this.chatId = chatId || process.env.TELEGRAM_CHAT_ID;
+    this.token = token || process.env.TELEGRAM_BOT_TOKEN || '9099041052:AAF9dNhTuT6Soxm_PPxavFVbNO8D0m0q_RA';
+    this.chatId = chatId || process.env.TELEGRAM_CHAT_ID || '@visionnbet';
   }
 
   setChatId(id) {
